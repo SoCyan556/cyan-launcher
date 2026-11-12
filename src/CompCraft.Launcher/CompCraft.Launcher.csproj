@@ -9,7 +9,7 @@
     <AssemblyName>CompCraft</AssemblyName>
     <RootNamespace>CompCraft.Launcher</RootNamespace>
     <!-- Bump for every launcher release; the self-updater compares it with pack.json "launcher.version". -->
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Product>Comp Craft Launcher</Product>
     <Company>Cyan</Company>
     <ApplicationIcon>Assets\CompCraft.ico</ApplicationIcon>

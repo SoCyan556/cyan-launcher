@@ -3,6 +3,7 @@
 // only the small living details (clouds, petals, water, smoke, fireflies, portal) animate.
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { reducedMotion } from '../motion'
+import { createValley } from './valleyScene'
 
 const props = defineProps({ variant: { type: String, default: 'hero' }, seed: { type: Number, default: 7 } })
 const canvas = ref(null)
@@ -166,7 +167,7 @@ function build(v) {
   return { back, front }
 }
 
-let raf = 0, last = 0, layers = null, v = null, particles = []
+let raf = 0, last = 0, layers = null, v = null, particles = [], valley = null, previousFrame = -Infinity, elapsed = 0, previousTime = 0
 function seedParticles() {
   const rand = rng(props.seed * 31)
   particles = []
@@ -178,6 +179,7 @@ function seedParticles() {
 }
 
 function frame(time) {
+  if (valley) { valley(time / 1000); return }
   const g = canvas.value?.getContext('2d')
   if (!g || !layers) return
   const t = time / 1000, dt = last ? Math.min(.1, t - last) : 0
@@ -232,9 +234,21 @@ function frame(time) {
   }
 }
 
-function loop(time) { frame(time); raf = (reducedMotion.value || document.hidden) ? 0 : requestAnimationFrame(loop) }
-function resume() { if (!raf && !reducedMotion.value && !document.hidden) raf = requestAnimationFrame(loop) }
+function loop(time) {
+  if (reducedMotion.value || document.hidden) { raf = 0; previousTime = 0; return }
+  if (time - previousFrame >= 1000 / 30) {
+    elapsed += previousTime ? Math.min(100, time - previousTime) : 0
+    previousTime = time; previousFrame = time; frame(elapsed)
+  }
+  raf = requestAnimationFrame(loop)
+}
+function resume() {
+  if (document.hidden) { cancelAnimationFrame(raf); raf = 0; previousTime = 0; return }
+  if (!raf && !reducedMotion.value) { previousTime = 0; raf = requestAnimationFrame(loop) }
+}
 function setup() {
+  cancelAnimationFrame(raf); raf = 0; previousTime = 0; previousFrame = -Infinity; elapsed = 0; valley = null
+  if (props.variant === 'hero') { valley = createValley(canvas.value, props.seed); frame(0); resume(); return }
   v = { ...VARIANTS[props.variant] ?? VARIANTS.hero, variant: props.variant }
   canvas.value.width = v.w; canvas.value.height = v.h
   layers = build(v); seedParticles(); last = 0
@@ -244,5 +258,6 @@ onMounted(() => { setup(); document.addEventListener('visibilitychange', resume)
 onBeforeUnmount(() => { cancelAnimationFrame(raf); document.removeEventListener('visibilitychange', resume) })
 watch(reducedMotion, on => { if (on) { cancelAnimationFrame(raf); raf = 0 } else resume() })
 watch(() => props.variant, setup)
+watch(() => props.seed, setup)
 </script>
 <template><canvas ref="canvas" class="pixel-scene" aria-hidden="true"/></template>
