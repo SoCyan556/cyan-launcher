@@ -194,59 +194,38 @@ static class Cli
         Console.WriteLine($"Wrote {Path.Combine(outDir, "pack.json")}");
     }
 
+
     /// <summary>
-    /// try --pack pack.json --data &lt;scratch dir&gt; [--launch --offline Name --seconds 240]
-    /// Installs a pack exactly as the launcher would into a throwaway data folder, and optionally
-    /// starts the game offline and waits for it to reach the title screen. For testing a release.
+    /// try --pack pack.json --data &lt;scratch .minecraft&gt;
+    /// Installs a pack exactly as the launcher does into a throwaway folder, twice (the second run must change nothing).
     /// </summary>
     static async Task<int> TryAsync(Dictionary<string, string?> o)
     {
         var pack = PackManifest.Parse(await File.ReadAllTextAsync(Req(o, "pack")));
-        var paths = new LauncherPaths(Path.GetFullPath(Req(o, "data")));
-        var svc = new LauncherService(paths);
+        var data = Path.GetFullPath(Req(o, "data"));
+        var gameDir = Path.Combine(data, ".minecraft");
+        var installer = new PackInstaller(Path.Combine(data, "cache"), Path.Combine(data, "retired"));
         var last = "";
         var progress = new Progress<(string m, double f)>(p => { if (p.m != last) { last = p.m; Console.WriteLine("  " + p.m); } });
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var r = await svc.InstallPackAsync(pack, false, progress, default);
+        var r = await installer.InstallAsync(pack, gameDir, false, progress);
         Console.WriteLine($"install: written {r.Written}, current {r.AlreadyCurrent}, downloaded {r.Downloaded}, defaults {r.DefaultsWritten.Count}, retired {r.Retired.Count} ({sw.Elapsed.TotalSeconds:F1}s)");
-        Console.WriteLine($"up to date: {PackInstaller.IsUpToDate(pack, svc.GameDir)}");
+        Console.WriteLine($"up to date: {PackInstaller.IsUpToDate(pack, gameDir)}");
         sw.Restart();
-        var r2 = await svc.InstallPackAsync(pack, false, null, default);
+        var r2 = await installer.InstallAsync(pack, gameDir, false);
         Console.WriteLine($"second run (no changes): written {r2.Written}, current {r2.AlreadyCurrent} ({sw.Elapsed.TotalSeconds:F1}s)");
-
-        if (!o.ContainsKey("launch")) return 0;
-        var session = CyanLauncher.Core.Auth.GameSession.Offline(Opt(o, "offline") ?? "CyanTester");
-        var proc = await svc.LaunchAsync(pack, session, progress, default);
-        var log = Path.Combine(svc.GameDir, "logs", "latest.log");
-        var deadline = DateTime.UtcNow.AddSeconds(int.Parse(Opt(o, "seconds") ?? "300"));
-        Console.WriteLine($"game started (pid {proc.Id}); waiting for the title screen…");
-        while (DateTime.UtcNow < deadline && !proc.HasExited)
-        {
-            await Task.Delay(3000);
-            if (!File.Exists(log)) continue;
-            string text;
-            using (var fs = new FileStream(log, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-            using (var sr = new StreamReader(fs)) text = await sr.ReadToEndAsync();
-            if (text.Contains("Sound engine started") || text.Contains("Created: ") && text.Contains("textures/atlas"))
-            {
-                await Task.Delay(15000); // let it settle on the title screen
-                Console.WriteLine(proc.HasExited ? $"game exited early (code {proc.ExitCode})" : "reached the title screen: OK");
-                var ok = !proc.HasExited;
-                if (!proc.HasExited) proc.Kill(true);
-                return ok ? 0 : 1;
-            }
-        }
-        Console.WriteLine(proc.HasExited ? $"game exited (code {proc.ExitCode}) before the title screen" : "timed out waiting for the title screen");
-        if (!proc.HasExited) proc.Kill(true);
-        return 1;
+        return r2.Written == 0 ? 0 : 1;
     }
 
-    /// <summary>Finds exact-file matches on Modrinth by SHA-1 so mods can download from Modrinth's CDN.</summary>
-    static async Task<Dictionary<PackFile, string>> LookupModrinthAsync(List<PackFile> mods, Dictionary<PackFile, string> local)
+    /// <summary>
+    /// Finds exact-file matches on Modrinth by SHA-1 so files download from Modrinth's CDN, and fills in each
+    /// project's description, icon and page for the launcher's Modpack page.
+    /// </summary>
+    static async Task<Dictionary<PackFile, string>> LookupModrinthAsync(List<PackFile> files, Dictionary<PackFile, string> local)
     {
         // Identical files can appear at several paths; one lookup serves all of them.
-        var bySha1 = mods.GroupBy(m => Hashing.Sha1File(local[m]), StringComparer.OrdinalIgnoreCase)
+        var bySha1 = files.GroupBy(m => Hashing.Sha1File(local[m]), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
         using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.modrinth.com/v2/version_files")
         {
@@ -256,12 +235,36 @@ static class Cli
         resp.EnsureSuccessStatusCode();
         var json = JsonNode.Parse(await resp.Content.ReadAsStringAsync())!.AsObject();
         var result = new Dictionary<PackFile, string>();
+        var byProject = new Dictionary<string, List<PackFile>>();
         foreach (var (sha1, version) in json)
         {
             if (!bySha1.TryGetValue(sha1, out var same) || version is null) continue;
             var file = version["files"]!.AsArray().FirstOrDefault(f => string.Equals((string?)f!["hashes"]?["sha1"], sha1, StringComparison.OrdinalIgnoreCase));
-            if (file?["url"] is JsonNode url)
-                foreach (var m in same) result[m] = (string)url!;
+            if (file?["url"] is not JsonNode url) continue;
+            foreach (var m in same) result[m] = (string)url!;
+            var projectId = (string?)version["project_id"];
+            if (projectId is null) continue;
+            if (!byProject.TryGetValue(projectId, out var list)) byProject[projectId] = list = new();
+            list.AddRange(same);
+        }
+
+        // Project details (title, description, icon) in batches.
+        foreach (var chunk in byProject.Keys.Chunk(80))
+        {
+            var ids = Uri.EscapeDataString(System.Text.Json.JsonSerializer.Serialize(chunk));
+            var projects = JsonNode.Parse(await Downloader.Http.GetStringAsync($"https://api.modrinth.com/v2/projects?ids={ids}"))!.AsArray();
+            foreach (var p in projects)
+            {
+                if (p is null || !byProject.TryGetValue((string)p["id"]!, out var targets)) continue;
+                var type = (string?)p["project_type"] ?? "mod";
+                foreach (var t in targets)
+                {
+                    t.Description ??= (string?)p["description"];
+                    t.IconUrl ??= (string?)p["icon_url"];
+                    t.ProjectUrl ??= $"https://modrinth.com/{type}/{(string?)p["slug"]}";
+                    if (t.Kind != PackFileKind.Mod || t.Name is null) t.Name ??= (string?)p["title"];
+                }
+            }
         }
         return result;
     }

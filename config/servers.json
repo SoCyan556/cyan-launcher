@@ -1,0 +1,16 @@
+[
+  {
+    "id": "survival",
+    "name": "Comp Craft Survival",
+    "address": "play.compcraft.example",
+    "port": 25565,
+    "description": "The main whitelisted survival world. Runs the full modpack."
+  },
+  {
+    "id": "creative",
+    "name": "Comp Craft Creative",
+    "address": "creative.compcraft.example",
+    "port": 25565,
+    "description": "Plots and build contests. Bring your best builds."
+  }
+]

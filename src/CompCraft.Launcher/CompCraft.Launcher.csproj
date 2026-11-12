@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>CompCraft</AssemblyName>
+    <RootNamespace>CompCraft.Launcher</RootNamespace>
+    <!-- Bump for every launcher release; the self-updater compares it with pack.json "launcher.version". -->
+    <Version>1.1.0</Version>
+    <Product>Comp Craft Launcher</Product>
+    <Company>Cyan</Company>
+    <ApplicationIcon>Assets\CompCraft.ico</ApplicationIcon>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <!-- Release: one self-contained exe (the setup and the app are the same file). -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CmlLib.Core" Version="4.1.0" />
+    <PackageReference Include="CmlLib.Core.Auth.Microsoft" Version="3.4.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CyanLauncher.Core\CyanLauncher.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\CompCraft.ico" />
+    <!-- Launcher name/tagline and servers are compiled in; a loose config\*.json next to the exe overrides them for testing. -->
+    <EmbeddedResource Include="..\..\config\*.json" LogicalName="config.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- Vite builds the Vue UI; it is zipped and compiled into the exe, then unpacked at runtime (see UiAssets). -->
+  <Target Name="BuildVueFrontend" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true' and '$(SkipFrontendBuild)' != 'true'">
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\..\..\frontend" Command="npm ci --no-audit --no-fund" Condition="!Exists('$(MSBuildProjectDirectory)\..\..\frontend\node_modules\vite\package.json')" />
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\..\..\frontend" Command="npm run build" />
+  </Target>
+  <Target Name="EmbedVueFrontend" AfterTargets="BuildVueFrontend" BeforeTargets="PrepareResources" Condition="'$(DesignTimeBuild)' != 'true'">
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <ZipDirectory SourceDirectory="$(MSBuildProjectDirectory)\..\..\frontend\dist" DestinationFile="$(IntermediateOutputPath)ui.zip" Overwrite="true" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(IntermediateOutputPath)ui.zip" LogicalName="ui.zip" />
+    </ItemGroup>
+  </Target>
+
+</Project>

@@ -103,6 +103,11 @@ public sealed class PackFile
     public List<string>? Depends { get; set; }
     /// <summary>The "environment" the mod's own fabric.mod.json declares. Informational only.</summary>
     public string? DeclaredEnvironment { get; set; }
+    /// <summary>Short description for the Modpack page (from Modrinth when the file is published there).</summary>
+    public string? Description { get; set; }
+    public string? IconUrl { get; set; }
+    /// <summary>Project page (https only), e.g. the Modrinth page.</summary>
+    public string? ProjectUrl { get; set; }
 
     /// <summary>
     /// True when the pack maintainer marks this mod as client-side. Only client-side mods can be

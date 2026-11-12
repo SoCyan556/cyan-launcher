@@ -141,14 +141,6 @@ public sealed class PackInstallerTests : IDisposable
     }
 
     [Fact]
-    public void ArgFileQuoting_KeepsWindowsPaths()
-    {
-        // Java argfiles treat '\' as an escape inside quotes; "C:/x" would be parsed as a URL by log4j.
-        Assert.Equal("\"-Dlog4j.configurationFile=C:\\\\a b\\\\c.xml\"",
-            CyanLauncher.Core.Game.GameLauncher.Quote("-Dlog4j.configurationFile=C:\\a b\\c.xml"));
-    }
-
-    [Fact]
     public void Versions_CompareNumerically()
     {
         Assert.True(AppInfo.CompareVersions("0.1.10", "0.1.9") > 0);

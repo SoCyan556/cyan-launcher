@@ -23,7 +23,7 @@ public static class SelfUpdater
     }
 
     /// <summary>Returns true when the new version was installed and started; the caller should exit.</summary>
-    public static async Task<bool> UpdateAndRestartAsync(PackManifest pack, CancellationToken ct)
+    public static async Task<bool> UpdateAndRestartAsync(PackManifest pack, CancellationToken ct, Action? beforeRestart = null)
     {
         if (!IsNewer(pack)) return false;
         var exe = Environment.ProcessPath ?? throw new InvalidOperationException("Cannot find the launcher's own path.");
@@ -46,6 +46,7 @@ public static class SelfUpdater
             File.Move(old, exe); // roll back
             throw;
         }
+        beforeRestart?.Invoke(); // e.g. release the single-instance lock so the new version can start
         Process.Start(new ProcessStartInfo(exe, "--updated") { UseShellExecute = false });
         return true;
     }

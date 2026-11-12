@@ -1,7 +1,7 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/CompCraft.Launcher/CompCraft.Launcher.csproj" />
     <Project Path="src/CyanLauncher.Core/CyanLauncher.Core.csproj" />
-    <Project Path="src/CyanLauncher/CyanLauncher.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CyanLauncher.Tests/CyanLauncher.Tests.csproj" />
